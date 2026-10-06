@@ -1,0 +1,170 @@
+{
+  "info": {
+    "name": "Fund Transfer — Merchant Payments",
+    "description": "Covers the internal service-to-service endpoint POST /internal/payments/merchant (X-Service-Key, no JWT), plus an edge case: a customer trying to add a MERCHANT account as a beneficiary (JWT). Import as its own collection, or drag the folders into your existing FundTransfer v2 collection. The success/insufficient merchant requests use a fresh {{$guid}} reference each run so idempotency does not replay an earlier result; restart Fund Transfer to reset balances.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": { "type": "noauth" },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "serviceKey", "value": "hungerbox-to-fundtransfer-shared-key-2026", "type": "string" },
+    { "key": "token", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Merchant payment",
+      "item": [
+        {
+          "name": "Pay merchant ACC1001 -> MER5001 (expect 200 SUCCESS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('payment succeeded', () => pm.expect(b.status).to.eql('SUCCESS'));",
+                  "pm.test('has a transaction id', () => pm.expect(b.transactionId).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Service-Key", "value": "{{serviceKey}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountNumber\": \"ACC1001\",\n  \"merchantAccountNumber\": \"MER5001\",\n  \"amount\": 100.00,\n  \"reference\": \"PM-{{$guid}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/internal/payments/merchant", "host": [ "{{baseUrl}}" ], "path": [ "internal", "payments", "merchant" ] }
+          }
+        },
+        {
+          "name": "Bad service key (expect 401 FT-MER-002)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('code is FT-MER-002', () => pm.expect(pm.response.json().code).to.eql('FT-MER-002'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Service-Key", "value": "wrong-key" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountNumber\": \"ACC1001\",\n  \"merchantAccountNumber\": \"MER5001\",\n  \"amount\": 100.00,\n  \"reference\": \"PM-BADKEY\"\n}" },
+            "url": { "raw": "{{baseUrl}}/internal/payments/merchant", "host": [ "{{baseUrl}}" ], "path": [ "internal", "payments", "merchant" ] }
+          }
+        },
+        {
+          "name": "Insufficient funds karl ACC11001 -> MER5001 (expect 422 FT-TXN-002)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('code is FT-TXN-002', () => pm.expect(pm.response.json().code).to.eql('FT-TXN-002'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Service-Key", "value": "{{serviceKey}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountNumber\": \"ACC11001\",\n  \"merchantAccountNumber\": \"MER5001\",\n  \"amount\": 10.00,\n  \"reference\": \"PM-{{$guid}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/internal/payments/merchant", "host": [ "{{baseUrl}}" ], "path": [ "internal", "payments", "merchant" ] }
+          }
+        },
+        {
+          "name": "Unknown merchant account ACC1001 -> MER9999 (expect 404 FT-MER-001)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('code is FT-MER-001', () => pm.expect(pm.response.json().code).to.eql('FT-MER-001'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Service-Key", "value": "{{serviceKey}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountNumber\": \"ACC1001\",\n  \"merchantAccountNumber\": \"MER9999\",\n  \"amount\": 100.00,\n  \"reference\": \"PM-{{$guid}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/internal/payments/merchant", "host": [ "{{baseUrl}}" ], "path": [ "internal", "payments", "merchant" ] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Edge case — merchant account as beneficiary",
+      "description": "A customer must NOT be able to add a merchant settlement account (MER5001) as a P2P beneficiary. NOTE: this asserts the RECOMMENDED behaviour (400). It passes only after adding the one-line guard in BeneficiaryServiceImpl.validateLinkedAccount: `if (account.isMerchantAccount()) throw new BusinessException(ErrorCode.BENEFICIARY_ACCOUNT_NOT_FOUND, \"Cannot add a merchant account as a beneficiary\");`. Without that guard the request currently returns 201 (the merchant is wrongly accepted) — change the expected status to 201 if you keep it allowed.",
+      "item": [
+        {
+          "name": "Login (alice) - saves token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"alice\",\n  \"password\": \"password1\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": [ "{{baseUrl}}" ], "path": [ "api", "auth", "login" ] }
+          }
+        },
+        {
+          "name": "Add MER5001 as beneficiary (expect 400 rejected)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('rejected with an FT-BEN code', () => pm.expect(pm.response.json().code).to.match(/^FT-BEN/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"nickname\": \"Sneaky merchant\",\n  \"accountNumber\": \"MER5001\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/beneficiaries", "host": [ "{{baseUrl}}" ], "path": [ "api", "beneficiaries" ] }
+          }
+        }
+      ]
+    }
+  ]
+}

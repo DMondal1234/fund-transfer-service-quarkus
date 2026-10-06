@@ -1,0 +1,407 @@
+================================================================================
+ FUND TRANSFER SERVICE - POSTMAN VERIFICATION GUIDE
+ Step-by-step testing of every endpoint. Written to be followed by any developer.
+================================================================================
+
+--------------------------------------------------------------------------------
+ 0. WHAT YOU ARE ABOUT TO DO
+--------------------------------------------------------------------------------
+You will start the Spring Boot application, import the Postman collection, and
+send requests that exercise every endpoint - the happy paths AND the negative
+cases (wrong password, no token, insufficient funds, duplicate beneficiary, etc.).
+
+The collection is pre-wired so you do NOT type tokens by hand:
+  - The "Login" request runs a small script that saves the JWT into a collection
+    variable named {{token}}.
+  - Every other request inherits "Bearer {{token}}" automatically.
+  - Each request also has built-in test assertions, so you get a green tick / red
+    cross per request and a pass/fail summary when you use the Collection Runner.
+
+There are 7 folders and 39 requests:
+  1) Auth                 (2)
+  2) Security             (1)
+  3) Accounts             (3)
+  4) Beneficiaries        (7)
+  5) Transfers            (4)
+  6) Transaction history  (4)
+  7) Extra scenarios      (18)  <- uses the 20-customer seed data
+
+--------------------------------------------------------------------------------
+ 1. PREREQUISITES
+--------------------------------------------------------------------------------
+ - JDK 17 or newer installed (check: java -version).
+ - Maven 3.9+ (check: mvn -version) OR just use IntelliJ's bundled Maven.
+ - Postman (desktop app or web).
+ - Internet access on the FIRST build only, so Maven can download dependencies.
+ - The project imported into IntelliJ IDEA (Open -> select the project's pom.xml).
+
+--------------------------------------------------------------------------------
+ 2. START THE APPLICATION
+--------------------------------------------------------------------------------
+ Option A - IntelliJ IDEA (recommended for you):
+   1. Open the project (File -> Open -> choose the fund-transfer folder / pom.xml).
+   2. Wait for Maven to finish importing (bottom status bar goes idle).
+   3. Open src/main/java/com/lbg/fundtransfer/FundTransferApplication.java.
+   4. Click the green ▶ next to the class name -> Run 'FundTransferApplication'.
+   5. In the Run console, wait for a line like:
+        "Started FundTransferApplication in X seconds"
+      The API is now listening on http://localhost:8080.
+
+ Option B - Terminal:
+      mvn spring-boot:run
+
+ IMPORTANT - the database is in-memory (H2). It is created fresh on every start
+ and wiped on every stop. All 20 demo customers are seeded automatically at
+ startup. This means:
+   * To get exact balances (used by some assertions), start with a FRESH run.
+   * Re-running money-moving requests without a restart changes balances, so a
+     balance-specific assertion may then "fail" even though the API is correct.
+
+--------------------------------------------------------------------------------
+ 3. IMPORT THE COLLECTION INTO POSTMAN
+--------------------------------------------------------------------------------
+   1. Open Postman.
+   2. Click "Import" (top-left).
+   3. Drag in the file:  postman/FundTransfer.postman_collection.json
+      (or click "files" and browse to it).
+   4. Click "Import". A collection named
+        "Fund Transfer Service"
+      appears in the left sidebar.
+
+ No separate environment is required. The collection already defines its own
+ variables:
+      baseUrl        = http://localhost:8080
+      token          = (empty; filled in automatically by Login)
+      daveBenId      = (empty; filled in automatically)
+      eveBenId       = (empty; filled in automatically)
+      carolDaveBenId = (empty; filled in automatically)
+      karlBenId      = (empty; filled in automatically)
+
+ If your app runs on a different port, edit baseUrl:
+   Collection -> right-click -> Edit -> Variables tab -> change baseUrl -> Save.
+
+--------------------------------------------------------------------------------
+ 4. HOW AUTHENTICATION WORKS IN THIS COLLECTION (READ ONCE)
+--------------------------------------------------------------------------------
+ - The collection's "Authorization" is set to: Bearer Token, value {{token}}.
+ - Every request is set to "Inherit auth from parent", EXCEPT the login requests
+   and the deliberate "no token" security test, which are set to "No Auth".
+ - The Login request has a Post-response (Tests) script:
+        pm.collectionVariables.set('token', pm.response.json().token);
+   So after you send Login once, {{token}} holds a valid JWT for ~60 minutes.
+ - If you start getting 401 responses later, your token expired: just send the
+   Login request again to refresh it.
+
+--------------------------------------------------------------------------------
+ 5. FAST PATH - RUN EVERYTHING AT ONCE (OPTIONAL BUT RECOMMENDED FIRST)
+--------------------------------------------------------------------------------
+   1. Restart the app (Section 2) so data is fresh.
+   2. In Postman, hover the collection name -> click the "..." (More actions)
+      -> "Run collection".  (Older Postman: the "Runner" button.)
+   3. Keep the default order (top to bottom). Click "Run Fund Transfer Service".
+   4. Watch the run report: each request shows PASS/FAIL for its assertions.
+      A clean run should be all green.
+   5. Now repeat manually (Sections 6-12) so you understand each call.
+
+--------------------------------------------------------------------------------
+ 6. FOLDER 1 - AUTH
+--------------------------------------------------------------------------------
+ [6.1] Request: "Login (alice) - saves token"
+   Method/URL : POST {{baseUrl}}/api/auth/login
+   Auth       : No Auth
+   Body (raw JSON):
+        {
+          "username": "alice",
+          "password": "password1"
+        }
+   Send. EXPECT: 200 OK.
+   Response looks like:
+        {
+          "token": "eyJhbGciOi...",
+          "tokenType": "Bearer",
+          "expiresInSeconds": 3600
+        }
+   What happened: the script saved token into {{token}}. Every later request now
+   authenticates automatically. DO THIS FIRST - nothing else works without it.
+
+ [6.2] Request: "Login - bad credentials (expect 401)"
+   Method/URL : POST {{baseUrl}}/api/auth/login
+   Body       : {"username":"alice","password":"wrong-password"}
+   Send. EXPECT: 401 Unauthorized.
+   Proves that invalid credentials are rejected and no token is issued.
+
+--------------------------------------------------------------------------------
+ 7. FOLDER 2 - SECURITY
+--------------------------------------------------------------------------------
+ [7.1] Request: "Accounts without token (expect 401)"
+   Method/URL : GET {{baseUrl}}/api/accounts
+   Auth       : No Auth (deliberately)
+   Send. EXPECT: 401 Unauthorized.
+   Proves that protected endpoints reject requests that carry no Bearer token.
+
+--------------------------------------------------------------------------------
+ 8. FOLDER 3 - ACCOUNTS   (make sure you ran Login 6.1 first)
+--------------------------------------------------------------------------------
+ [8.1] "List my accounts"
+   GET {{baseUrl}}/api/accounts
+   EXPECT: 200 OK. A JSON array with Alice's two accounts:
+        ACC1001 SAVINGS balance 5000.00
+        ACC1002 CURRENT balance 1500.00
+
+ [8.2] "Get account ACC1001"
+   GET {{baseUrl}}/api/accounts/ACC1001
+   EXPECT: 200 OK. accountNumber = ACC1001, balance 5000.00,
+           ownerName "Alice Fernandes".
+
+ [8.3] "Get someone else's account ACC2001 (expect 404)"
+   GET {{baseUrl}}/api/accounts/ACC2001
+   EXPECT: 404 Not Found. ACC2001 belongs to Bob; Alice cannot see it.
+   Proves ownership scoping (no data leaks across customers).
+
+--------------------------------------------------------------------------------
+ 9. FOLDER 4 - BENEFICIARIES
+--------------------------------------------------------------------------------
+ [9.1] "List beneficiaries"
+   GET {{baseUrl}}/api/beneficiaries
+   EXPECT: 200 OK. One entry: id 1, nickname "Bob (friend)", accountNumber ACC2001.
+
+ [9.2] "Get beneficiary 1"
+   GET {{baseUrl}}/api/beneficiaries/1
+   EXPECT: 200 OK. The same beneficiary.
+
+ [9.3] "Add duplicate beneficiary ACC2001 (expect 400)"
+   POST {{baseUrl}}/api/beneficiaries
+   Body: {"nickname":"Bob again","accountNumber":"ACC2001"}
+   EXPECT: 400 Bad Request. Alice already has ACC2001 saved (no duplicates).
+
+ [9.4] "Add own account as beneficiary (expect 400)"
+   POST {{baseUrl}}/api/beneficiaries
+   Body: {"nickname":"My own account","accountNumber":"ACC1001"}
+   EXPECT: 400 Bad Request. You cannot add your own account as a payee.
+
+ [9.5] "Add non-existent account (expect 400)"
+   POST {{baseUrl}}/api/beneficiaries
+   Body: {"nickname":"Ghost","accountNumber":"ACC9999"}
+   EXPECT: 400 Bad Request. The account must exist (the "logical link" check).
+
+ [9.6] "Add beneficiary with blank fields (expect 400 validation)"
+   POST {{baseUrl}}/api/beneficiaries
+   Body: {"nickname":"","accountNumber":""}
+   EXPECT: 400 Bad Request. The "details" array lists each field error.
+
+ [9.7] "Update beneficiary 1 nickname"
+   PUT {{baseUrl}}/api/beneficiaries/1
+   Body: {"nickname":"Bob (best friend)","accountNumber":"ACC2001"}
+   EXPECT: 200 OK. nickname is now "Bob (best friend)".
+
+ NOTE: a clean "201 create" and "204 delete" are demonstrated in Folder 7
+ (Eve's add/delete cycle), on a customer who starts with no beneficiaries.
+
+--------------------------------------------------------------------------------
+ 10. FOLDER 5 - TRANSFERS
+--------------------------------------------------------------------------------
+ [10.1] "Transfer 300 ACC1001 -> beneficiary 1 (expect 201)"
+   POST {{baseUrl}}/api/transfers
+   Body:
+        {
+          "sourceAccountNumber":"ACC1001",
+          "beneficiaryId":1,
+          "amount":300.00,
+          "description":"rent"
+        }
+   EXPECT: 201 Created. status "SUCCESS", sourceBalanceAfter 4700.00.
+   (ACC1001 went from 5000 to 4700; Bob's ACC2001 went from 800 to 1100.)
+
+ [10.2] "Transfer more than balance (expect 422)"
+   Body: {"sourceAccountNumber":"ACC1001","beneficiaryId":1,"amount":999999.00}
+   EXPECT: 422 Unprocessable Entity. Insufficient funds.
+   A FAILED transaction is recorded for the audit trail (visible in history).
+
+ [10.3] "Transfer negative amount (expect 400)"
+   Body: {"sourceAccountNumber":"ACC1001","beneficiaryId":1,"amount":-5}
+   EXPECT: 400 Bad Request. Amount must be greater than zero (validation).
+
+ [10.4] "Transfer from account not owned (expect 404)"
+   Body: {"sourceAccountNumber":"ACC2001","beneficiaryId":1,"amount":10.00}
+   EXPECT: 404 Not Found. ACC2001 is Bob's account, not Alice's.
+
+--------------------------------------------------------------------------------
+ 11. FOLDER 6 - TRANSACTION HISTORY
+--------------------------------------------------------------------------------
+ (Run Folder 5 first so there is history to see.)
+
+ [11.1] "All transactions"
+   GET {{baseUrl}}/api/transactions
+   EXPECT: 200 OK. A paged object: content[], plus page, size, totalElements,
+           totalPages. After Folder 5 you see the SUCCESS transfer (300) and the
+           FAILED attempt (999999).
+
+ [11.2] "By date range"
+   GET {{baseUrl}}/api/transactions?from=2026-01-01&to=2026-12-31
+   EXPECT: 200 OK. Same records, filtered to the inclusive date range.
+
+ [11.3] "By month"
+   GET {{baseUrl}}/api/transactions?month=2026-09
+   EXPECT: 200 OK. Records for September 2026.
+   NOTE: transactions are timestamped "now". If today is NOT in 2026-09, change
+   this to the current YYYY-MM, otherwise the list will be empty.
+
+ [11.4] "Paged (size 1)"
+   GET {{baseUrl}}/api/transactions?page=0&size=1
+   EXPECT: 200 OK. size = 1, with totalElements / totalPages reflecting paging.
+
+--------------------------------------------------------------------------------
+ 12. FOLDER 7 - EXTRA SCENARIOS (20-CUSTOMER SEED)
+--------------------------------------------------------------------------------
+ This folder switches users. Each sub-section LOGS IN first, which overwrites
+ {{token}}. It sits last on purpose so it never disturbs the Alice tests above.
+ For the exact balance numbers below, run it right after a fresh app restart.
+
+ --- DAVE (low balance = 50) ---
+ [12.1] "Dave - login (balance 50)"
+   POST /api/auth/login  Body: {"username":"dave","password":"password123"}
+   EXPECT: 200. Saves {{token}} as Dave.
+
+ [12.2] "Dave - capture beneficiary id"
+   GET /api/beneficiaries
+   EXPECT: 200. Script saves Dave's first beneficiary id into {{daveBenId}}.
+
+ [12.3] "Dave - transfer 500 (expect 422 insufficient)"
+   POST /api/transfers
+   Body: {"sourceAccountNumber":"ACC4001","beneficiaryId":{{daveBenId}},"amount":500.00}
+   EXPECT: 422. Dave has only 50, cannot send 500.
+
+ [12.4] "Dave - transfer 25 (expect 201, balance 50 -> 25)"
+   POST /api/transfers
+   Body: {"sourceAccountNumber":"ACC4001","beneficiaryId":{{daveBenId}},"amount":25.00}
+   EXPECT: 201. status SUCCESS, sourceBalanceAfter 25.
+
+ --- EVE (starts with NO beneficiaries: full add -> transfer -> delete cycle) ---
+ [12.5] "Eve - login (no beneficiaries yet)"
+   POST /api/auth/login  Body: {"username":"eve","password":"password123"}
+   EXPECT: 200. Saves {{token}} as Eve.
+
+ [12.6] "Eve - list beneficiaries (expect empty)"
+   GET /api/beneficiaries
+   EXPECT: 200 and an empty array [].
+
+ [12.7] "Eve - add beneficiary (expect 201)"
+   POST /api/beneficiaries
+   Body: {"nickname":"Alice payee","accountNumber":"ACC1001"}
+   EXPECT: 201 Created. Script saves the new id into {{eveBenId}}.
+
+ [12.8] "Eve - get the new beneficiary (expect 200)"
+   GET /api/beneficiaries/{{eveBenId}}
+   EXPECT: 200.
+
+ [12.9] "Eve - transfer 2000 to new beneficiary (expect 201)"
+   POST /api/transfers
+   Body: {"sourceAccountNumber":"ACC5001","beneficiaryId":{{eveBenId}},"amount":2000.00}
+   EXPECT: 201. sourceBalanceAfter 23000 (Eve's ACC5001 was 25000).
+
+ [12.10] "Eve - delete the beneficiary (expect 204)"
+   DELETE /api/beneficiaries/{{eveBenId}}
+   EXPECT: 204 No Content.
+
+ [12.11] "Eve - list beneficiaries again (expect empty)"
+   GET /api/beneficiaries
+   EXPECT: 200 and an empty array [] again.
+
+ --- CAROL (2 accounts, 2 beneficiaries) ---
+ [12.12] "Carol - login"
+   POST /api/auth/login  Body: {"username":"carol","password":"password123"}
+   EXPECT: 200. Saves {{token}} as Carol.
+
+ [12.13] "Carol - list accounts (expect 2)"
+   GET /api/accounts
+   EXPECT: 200 and 2 accounts (ACC3001, ACC3002).
+
+ [12.14] "Carol - capture 'Dave' beneficiary id"
+   GET /api/beneficiaries
+   EXPECT: 200. Script finds the beneficiary whose accountNumber is ACC4001 and
+           saves its id into {{carolDaveBenId}}.
+
+ [12.15] "Carol - transfer 1000 from ACC3001 (expect 201)"
+   POST /api/transfers
+   Body: {"sourceAccountNumber":"ACC3001","beneficiaryId":{{carolDaveBenId}},"amount":1000.00}
+   EXPECT: 201. sourceBalanceAfter 11000 (ACC3001 was 12000).
+
+ --- KARL (zero balance account) ---
+ [12.16] "Karl - login (zero balance account)"
+   POST /api/auth/login  Body: {"username":"karl","password":"password123"}
+   EXPECT: 200. Saves {{token}} as Karl.
+
+ [12.17] "Karl - add Bob as beneficiary (expect 201)"
+   POST /api/beneficiaries
+   Body: {"nickname":"Bob","accountNumber":"ACC2001"}
+   EXPECT: 201. Script saves the new id into {{karlBenId}}.
+
+ [12.18] "Karl - transfer 10 from zero-balance account (expect 422)"
+   POST /api/transfers
+   Body: {"sourceAccountNumber":"ACC11001","beneficiaryId":{{karlBenId}},"amount":10.00}
+   EXPECT: 422. ACC11001 balance is 0, so even 10 cannot be sent.
+
+--------------------------------------------------------------------------------
+ 13. OPTIONAL - VERIFY THE DATA DIRECTLY IN THE H2 CONSOLE
+--------------------------------------------------------------------------------
+ To confirm money actually moved (e.g. Bob received Alice's transfer):
+   1. Open a browser: http://localhost:8080/h2-console
+   2. Set:
+        Driver Class : org.h2.Driver
+        JDBC URL     : jdbc:h2:mem:fundtransfer
+        User Name    : sa
+        Password     : (leave empty)
+   3. Click "Connect", then run SQL, e.g.:
+        SELECT * FROM ACCOUNTS ORDER BY ACCOUNT_NUMBER;
+        SELECT * FROM TRANSACTIONS ORDER BY ID;
+        SELECT * FROM BENEFICIARIES;
+        SELECT * FROM CUSTOMERS;
+   4. After the Alice transfer of 300, ACC1001 = 4700.00 and ACC2001 = 1100.00.
+
+--------------------------------------------------------------------------------
+ 14. EXPECTED-STATUS QUICK REFERENCE
+--------------------------------------------------------------------------------
+   200 OK                     - successful GET / login / update
+   201 Created                - beneficiary added, transfer completed
+   204 No Content             - beneficiary deleted
+   400 Bad Request            - validation error or business-rule violation
+   401 Unauthorized           - missing/invalid token, or wrong login
+   404 Not Found              - resource missing or not owned by the caller
+   422 Unprocessable Entity   - insufficient funds
+
+--------------------------------------------------------------------------------
+ 15. TROUBLESHOOTING
+--------------------------------------------------------------------------------
+ * 401 on requests that should work
+     -> Your token expired or Login was not run. Send the relevant Login request
+        again to refresh {{token}}.
+ * Connection refused / could not send request
+     -> The app is not running, or it is on a different port. Confirm the console
+        shows "Started FundTransferApplication" and that baseUrl matches the port.
+ * A balance assertion fails but the status code is correct
+     -> You ran a money-moving request more than once without restarting. Restart
+        the app to reseed, then re-run.
+ * "By month" history returns an empty list
+     -> Transactions are timestamped now. Set month to the current YYYY-MM.
+ * 403 instead of 401 (should not happen here)
+     -> Ensure you imported the latest collection; the security test expects 401.
+ * Beneficiary id not found in Folder 7
+     -> Run the "capture ..." request in that sub-section first; it fills the id
+        variable used by the transfer request.
+
+--------------------------------------------------------------------------------
+ 16. RECOMMENDED DEMO ORDER (SHORT SCRIPT)
+--------------------------------------------------------------------------------
+   1. Restart the app (fresh seed).
+   2. Auth -> Login (alice).
+   3. Security -> Accounts without token (401).
+   4. Accounts -> list, get, cross-customer 404.
+   5. Beneficiaries -> list, negative cases, update.
+   6. Transfers -> 201 success, 422 insufficient, 400 negative, 404 not owned.
+   7. Transaction history -> all, range, month, paged.
+   8. Extra scenarios -> Dave, Eve (add/delete cycle), Carol, Karl.
+   9. (Optional) H2 console -> show balances changed.
+
+================================================================================
+ END OF GUIDE
+================================================================================

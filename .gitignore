@@ -1,0 +1,66 @@
+# ─── Maven build output ──────────────────────────────────────
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+*.jar
+*.war
+*.ear
+
+# ─── Quarkus ─────────────────────────────────────────────────
+.quarkus/
+build/
+nb-configuration.xml
+# Native-image build output
+*-runner
+*-runner.jar
+*.so
+*.dll
+*.dylib
+
+# ─── IntelliJ IDEA ───────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# ─── Other IDEs / editors ────────────────────────────────────
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+*.swp
+*~
+
+# ─── Logs ────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Local H2 database files ─────────────────────────────────
+*.db
+*.mv.db
+*.trace.db
+*.lock.db
+
+# ─── Local / secret configuration (never commit) ─────────────
+.env
+*.env
+.env.*
+application-local.properties
+application-secrets.properties
+src/main/resources/application-prod.properties
+
+# ─── OS noise ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Archives / scratch ──────────────────────────────────────
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.bak
+*.orig
+*.tmp

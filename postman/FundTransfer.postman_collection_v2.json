@@ -1,0 +1,989 @@
+{
+  "info": {
+    "name": "Fund Transfer Service",
+    "description": "End-to-end verification of the Spring Boot fund-transfer API. Login saves the JWT to the {{token}} collection variable automatically; every other request inherits Bearer {{token}}. Run the requests top-to-bottom. The DB is in-memory, so restarting the app resets to the seeded state (Alice ACC1001=5000, ACC1002=1500; Bob ACC2001=800; Alice has Bob as beneficiary id 1).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "daveBenId", "value": "", "type": "string" },
+    { "key": "eveBenId", "value": "", "type": "string" },
+    { "key": "carolDaveBenId", "value": "", "type": "string" },
+    { "key": "karlBenId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (alice) - saves token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('token', json.token);",
+                  "pm.test('token returned', () => pm.expect(json.token).to.be.a('string').and.not.empty);",
+                  "pm.test('token type is Bearer', () => pm.expect(json.tokenType).to.eql('Bearer'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"alice\",\n  \"password\": \"password1\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "auth", "login" ]
+            }
+          }
+        },
+        {
+          "name": "Login - bad credentials (expect 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"alice\",\n  \"password\": \"wrong-password\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "auth", "login" ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Security",
+      "item": [
+        {
+          "name": "Accounts without token (expect 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "accounts" ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "List my accounts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const a = pm.response.json();",
+                  "pm.test('has ACC1001', () => pm.expect(a.map(x => x.accountNumber)).to.include('ACC1001'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "accounts" ]
+            }
+          }
+        },
+        {
+          "name": "Get account ACC1001",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is ACC1001', () => pm.expect(pm.response.json().accountNumber).to.eql('ACC1001'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/ACC1001",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "accounts", "ACC1001" ]
+            }
+          }
+        },
+        {
+          "name": "Get someone else's account ACC2001 (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/ACC2001",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "accounts", "ACC2001" ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Beneficiaries",
+      "item": [
+        {
+          "name": "List beneficiaries",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/beneficiaries",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "beneficiaries" ]
+            }
+          }
+        },
+        {
+          "name": "Get beneficiary 1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/beneficiaries/1",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "beneficiaries", "1" ]
+            }
+          }
+        },
+        {
+          "name": "Add duplicate beneficiary ACC2001 (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nickname\": \"Bob again\",\n  \"accountNumber\": \"ACC2001\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/beneficiaries",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "beneficiaries" ]
+            }
+          }
+        },
+        {
+          "name": "Add own account as beneficiary (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nickname\": \"My own account\",\n  \"accountNumber\": \"ACC1001\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/beneficiaries",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "beneficiaries" ]
+            }
+          }
+        },
+        {
+          "name": "Add non-existent account (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nickname\": \"Ghost\",\n  \"accountNumber\": \"ACC9999\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/beneficiaries",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "beneficiaries" ]
+            }
+          }
+        },
+        {
+          "name": "Add beneficiary with blank fields (expect 400 validation)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('has validation details', () => pm.expect(pm.response.json().details.length).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nickname\": \"\",\n  \"accountNumber\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/beneficiaries",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "beneficiaries" ]
+            }
+          }
+        },
+        {
+          "name": "Update beneficiary 1 nickname",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('nickname updated', () => pm.expect(pm.response.json().nickname).to.eql('Bob (best friend)'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nickname\": \"Bob (best friend)\",\n  \"accountNumber\": \"ACC2001\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/beneficiaries/1",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "beneficiaries", "1" ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transfers",
+      "item": [
+        {
+          "name": "Transfer 300 ACC1001 -> beneficiary 1 (expect 201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const t = pm.response.json();",
+                  "pm.test('status SUCCESS', () => pm.expect(t.status).to.eql('SUCCESS'));",
+                  "pm.test('source debited', () => pm.expect(Number(t.sourceBalanceAfter)).to.eql(4700));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountNumber\": \"ACC1001\",\n  \"beneficiaryId\": 1,\n  \"amount\": 300.00,\n  \"description\": \"rent\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transfers",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "transfers" ]
+            }
+          }
+        },
+        {
+          "name": "Transfer more than balance (expect 422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountNumber\": \"ACC1001\",\n  \"beneficiaryId\": 1,\n  \"amount\": 999999.00,\n  \"description\": \"too much\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transfers",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "transfers" ]
+            }
+          }
+        },
+        {
+          "name": "Transfer negative amount (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountNumber\": \"ACC1001\",\n  \"beneficiaryId\": 1,\n  \"amount\": -5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transfers",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "transfers" ]
+            }
+          }
+        },
+        {
+          "name": "Transfer from account not owned (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountNumber\": \"ACC2001\",\n  \"beneficiaryId\": 1,\n  \"amount\": 10.00\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transfers",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "transfers" ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transaction history",
+      "item": [
+        {
+          "name": "All transactions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('has content array', () => pm.expect(pm.response.json().content).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "transactions" ]
+            }
+          }
+        },
+        {
+          "name": "By date range",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions?from=2026-01-01&to=2026-12-31",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "transactions" ],
+              "query": [
+                { "key": "from", "value": "2026-01-01" },
+                { "key": "to", "value": "2026-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "By month",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions?month=2026-09",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "transactions" ],
+              "query": [
+                { "key": "month", "value": "2026-09" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Paged (size 1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('page size is 1', () => pm.expect(pm.response.json().size).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions?page=0&size=1",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "transactions" ],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "1" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Extra scenarios (20-customer seed)",
+      "description": "These use the expanded seed data and switch users, so each sub-section logs in first (which overwrites {{token}}). Run this folder after a fresh app restart for the exact balance assertions to hold.",
+      "item": [
+        {
+          "name": "Dave - login (balance 50)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"dave\",\n  \"password\": \"password123\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": [ "{{baseUrl}}" ], "path": [ "api", "auth", "login" ] }
+          }
+        },
+        {
+          "name": "Dave - capture beneficiary id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test('has a beneficiary', () => pm.expect(list.length).to.be.above(0));",
+                  "pm.collectionVariables.set('daveBenId', list[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/beneficiaries", "host": [ "{{baseUrl}}" ], "path": [ "api", "beneficiaries" ] }
+          }
+        },
+        {
+          "name": "Dave - transfer 500 (expect 422 insufficient)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountNumber\": \"ACC4001\",\n  \"beneficiaryId\": {{daveBenId}},\n  \"amount\": 500.00,\n  \"description\": \"more than balance\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/transfers", "host": [ "{{baseUrl}}" ], "path": [ "api", "transfers" ] }
+          }
+        },
+        {
+          "name": "Dave - transfer 25 (expect 201, balance 50 -> 25)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('source now 25', () => pm.expect(Number(pm.response.json().sourceBalanceAfter)).to.eql(25));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountNumber\": \"ACC4001\",\n  \"beneficiaryId\": {{daveBenId}},\n  \"amount\": 25.00,\n  \"description\": \"within balance\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/transfers", "host": [ "{{baseUrl}}" ], "path": [ "api", "transfers" ] }
+          }
+        },
+        {
+          "name": "Eve - login (no beneficiaries yet)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"eve\",\n  \"password\": \"password123\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": [ "{{baseUrl}}" ], "path": [ "api", "auth", "login" ] }
+          }
+        },
+        {
+          "name": "Eve - list beneficiaries (expect empty)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('empty to start', () => pm.expect(pm.response.json().length).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/beneficiaries", "host": [ "{{baseUrl}}" ], "path": [ "api", "beneficiaries" ] }
+          }
+        },
+        {
+          "name": "Eve - add beneficiary (expect 201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('eveBenId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"nickname\": \"Alice payee\",\n  \"accountNumber\": \"ACC1001\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/beneficiaries", "host": [ "{{baseUrl}}" ], "path": [ "api", "beneficiaries" ] }
+          }
+        },
+        {
+          "name": "Eve - get the new beneficiary (expect 200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/beneficiaries/{{eveBenId}}", "host": [ "{{baseUrl}}" ], "path": [ "api", "beneficiaries", "{{eveBenId}}" ] }
+          }
+        },
+        {
+          "name": "Eve - transfer 2000 to new beneficiary (expect 201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('source now 23000', () => pm.expect(Number(pm.response.json().sourceBalanceAfter)).to.eql(23000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountNumber\": \"ACC5001\",\n  \"beneficiaryId\": {{eveBenId}},\n  \"amount\": 2000.00,\n  \"description\": \"to alice\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/transfers", "host": [ "{{baseUrl}}" ], "path": [ "api", "transfers" ] }
+          }
+        },
+        {
+          "name": "Eve - delete the beneficiary (expect 204)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/beneficiaries/{{eveBenId}}", "host": [ "{{baseUrl}}" ], "path": [ "api", "beneficiaries", "{{eveBenId}}" ] }
+          }
+        },
+        {
+          "name": "Eve - list beneficiaries again (expect empty)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('empty after delete', () => pm.expect(pm.response.json().length).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/beneficiaries", "host": [ "{{baseUrl}}" ], "path": [ "api", "beneficiaries" ] }
+          }
+        },
+        {
+          "name": "Carol - login (2 accounts, 2 beneficiaries)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"carol\",\n  \"password\": \"password123\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": [ "{{baseUrl}}" ], "path": [ "api", "auth", "login" ] }
+          }
+        },
+        {
+          "name": "Carol - list accounts (expect 2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('has 2 accounts', () => pm.expect(pm.response.json().length).to.eql(2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/accounts", "host": [ "{{baseUrl}}" ], "path": [ "api", "accounts" ] }
+          }
+        },
+        {
+          "name": "Carol - capture 'Dave' beneficiary id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const dave = pm.response.json().find(b => b.accountNumber === 'ACC4001');",
+                  "pm.test('found Dave beneficiary', () => pm.expect(dave).to.be.an('object'));",
+                  "pm.collectionVariables.set('carolDaveBenId', dave.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/beneficiaries", "host": [ "{{baseUrl}}" ], "path": [ "api", "beneficiaries" ] }
+          }
+        },
+        {
+          "name": "Carol - transfer 1000 from ACC3001 (expect 201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('source now 11000', () => pm.expect(Number(pm.response.json().sourceBalanceAfter)).to.eql(11000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountNumber\": \"ACC3001\",\n  \"beneficiaryId\": {{carolDaveBenId}},\n  \"amount\": 1000.00,\n  \"description\": \"to dave\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/transfers", "host": [ "{{baseUrl}}" ], "path": [ "api", "transfers" ] }
+          }
+        },
+        {
+          "name": "Karl - login (zero balance account)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"karl\",\n  \"password\": \"password123\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": [ "{{baseUrl}}" ], "path": [ "api", "auth", "login" ] }
+          }
+        },
+        {
+          "name": "Karl - add Bob as beneficiary (expect 201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('karlBenId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"nickname\": \"Bob\",\n  \"accountNumber\": \"ACC2001\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/beneficiaries", "host": [ "{{baseUrl}}" ], "path": [ "api", "beneficiaries" ] }
+          }
+        },
+        {
+          "name": "Karl - transfer 10 from zero-balance account (expect 422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"sourceAccountNumber\": \"ACC11001\",\n  \"beneficiaryId\": {{karlBenId}},\n  \"amount\": 10.00,\n  \"description\": \"nothing to send\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/transfers", "host": [ "{{baseUrl}}" ], "path": [ "api", "transfers" ] }
+          }
+        }
+      ]
+    }
+  ]
+}
